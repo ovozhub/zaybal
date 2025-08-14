@@ -4,7 +4,7 @@ import os
 from aiohttp import web
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from telethon import TelegramClient, errors
 from telethon.tl.functions.channels import CreateChannelRequest, InviteToChannelRequest
 
@@ -207,36 +207,30 @@ async def start_webserver():
     logger.info(f"🌐 Web-server {port} portda ishga tushdi.")
 
 
-# 🤖 BOTNI ISHGA TUSHIRISH
-async def run_bot():
-    application = Application.builder().token(bot_token).build()
-
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            ASK_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_password)],
-            SELECT_MODE: [CallbackQueryHandler(mode_chosen)],
-            PHONE: [MessageHandler(filters.TEXT | filters.CONTACT, phone_received)],
-            CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, code_received)],
-            PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, password_received)],
-            GROUP_RANGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, group_range_received)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    application.add_handler(conv_handler)
-    logger.info("🤖 Bot ishga tushdi.")
-
-    await application.run_polling()
-
-
-# ASOSIY ISHGA TUSHIRISH
-async def main():
-    await asyncio.gather(
-        start_webserver(),
-        run_bot()
-    )
-
-
+# ——— Render uchun mos asosiy ishga tushirish ———
 if __name__ == "__main__":
+    async def main():
+        # Web-serverni fon vazifasida ishga tushirish
+        asyncio.create_task(start_webserver())
+
+        # Botni ishga tushirish
+        app = ApplicationBuilder().token(bot_token).build()
+
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("start", start)],
+            states={
+                ASK_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_password)],
+                SELECT_MODE: [CallbackQueryHandler(mode_chosen)],
+                PHONE: [MessageHandler(filters.TEXT | filters.CONTACT, phone_received)],
+                CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, code_received)],
+                PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, password_received)],
+                GROUP_RANGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, group_range_received)],
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+        )
+        app.add_handler(conv_handler)
+
+        logger.info("🤖 Bot ishga tushdi.")
+        await app.run_polling()
+
     asyncio.run(main())
