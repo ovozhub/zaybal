@@ -15,7 +15,7 @@ Path("sessions").mkdir(exist_ok=True)
 # ——— TELEGRAM API ma’lumotlari ———
 api_id = 25351311
 api_hash = "7b854af9996797aa9ca67b42f1cd5cbe"
-bot_token = os.environ.get("7352312639:AAEwQHVq5Uwhmnkc3ITk5vPLhVrRxCOWTcs", "7352312639:AAEwQHVq5Uwhmnkc3ITk5vPLhVrRxCOWTcs")  # tokenni ENV orqali olish
+bot_token = os.environ.get("7352312639:AAEwQHVq5Uwhmnkc3ITk5vPLhVrRxCOWTcs", "7352312639:AAEwQHVq5Uwhmnkc3ITk5vPLhVrRxCOWTcs")  # Render ENV'dan olish
 
 # 🔑 Kirish paroli
 ACCESS_PASSWORD = "dnx"
@@ -198,8 +198,7 @@ async def run_bot():
             PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, password_received)],
             GROUP_RANGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, group_range_received)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=True
+        fallbacks=[CommandHandler("cancel", cancel)]
     )
     application.add_handler(conv_handler)
     logger.info("🤖 Bot ishga tushdi.")
