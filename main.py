@@ -1,25 +1,26 @@
 import logging
 import asyncio
 import os
+from pathlib import Path
 from aiohttp import web
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from telethon import TelegramClient, errors
 from telethon.tl.functions.channels import CreateChannelRequest, InviteToChannelRequest
 
 # 📂 sessions papkasini yaratamiz
-os.makedirs("sessions", exist_ok=True)
+Path("sessions").mkdir(exist_ok=True)
 
 # ——— TELEGRAM API ma’lumotlari ———
 api_id = 25351311
 api_hash = "7b854af9996797aa9ca67b42f1cd5cbe"
-bot_token = "7352312639:AAEwQHVq5Uwhmnkc3ITk5vPLhVrRxCOWTcs"
+bot_token = "BOT_TOKEN_HERE"  # xavfsizlik uchun tokenni Render environment variables ga qo‘ying
 
 # 🔑 Kirish paroli
 ACCESS_PASSWORD = "dnx"
 
-# 🎯 Har bir guruhga avtomatik qo'shiladigan bot
+# 🎯 Avtomatik qo‘shiladigan bot
 TARGET_BOT = "@oxang_bot"
 
 # ——— LOGGER ———
@@ -30,42 +31,33 @@ logger = logging.getLogger(__name__)
 ASK_PASSWORD, SELECT_MODE, PHONE, CODE, PASSWORD, GROUP_RANGE = range(6)
 
 # ——— Session va avtorizatsiya boshqaruvlari ———
-sessions = {}  # {user_id: TelegramClient}
-authorized_users = set()  # Parol kiritgan userlar ID si
-
+sessions = {}
+authorized_users = set()
 
 # ——— START ———
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id in authorized_users:
+    if update.effective_user.id in authorized_users:
         return await show_menu(update)
-    else:
-        await update.message.reply_text("🔒 Kirish parolini kiriting:")
-        return ASK_PASSWORD
-
+    await update.message.reply_text("🔒 Kirish parolini kiriting:")
+    return ASK_PASSWORD
 
 # ——— Parol tekshirish ———
 async def ask_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
     if update.message.text.strip() != ACCESS_PASSWORD:
         await update.message.reply_text("❌ Noto‘g‘ri parol.")
         return ConversationHandler.END
-    authorized_users.add(user_id)
+    authorized_users.add(update.effective_user.id)
     return await show_menu(update)
-
 
 # ——— Menyu chiqarish ———
 async def show_menu(update: Update):
-    keyboard = [
-        [InlineKeyboardButton("Guruh ochish", callback_data='create_group'),
-         InlineKeyboardButton("Guruhni topshirish", callback_data='transfer_group')]
-    ]
-    if update.message:
-        await update.message.reply_text("Rejimni tanlang⚙️", reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update.callback_query.message.reply_text("Rejimni tanlang⚙️", reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[
+        InlineKeyboardButton("Guruh ochish", callback_data='create_group'),
+        InlineKeyboardButton("Guruhni topshirish", callback_data='transfer_group')
+    ]]
+    target = update.message or update.callback_query.message
+    await target.reply_text("Rejimni tanlang⚙️", reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECT_MODE
-
 
 # ——— Rejim tanlash ———
 async def mode_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -79,12 +71,11 @@ async def mode_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text("📞 Telefon raqamingizni yuboring:", reply_markup=keyboard)
     return PHONE
 
-
 # ——— Telefon qabul qilish ———
 async def phone_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    phone = update.message.contact.phone_number if update.message.contact else update.message.text
-    if not phone.startswith('+'):
-        await update.message.reply_text("Telefon raqam + bilan boshlanishi kerak.")
+    phone = update.message.contact.phone_number if update.message.contact else update.message.text.strip()
+    if not phone.startswith('+') or not phone[1:].isdigit():
+        await update.message.reply_text("Telefon raqam + bilan boshlanishi va raqam bo‘lishi kerak.")
         return PHONE
 
     context.user_data['phone'] = phone
@@ -100,17 +91,13 @@ async def phone_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text(f"❌ Xato: {e}")
             return ConversationHandler.END
-    else:
-        await update.message.reply_text("✅ Akkount allaqachon ulangan.")
-        return await after_login(update, context)
-
+    await update.message.reply_text("✅ Akkount allaqachon ulangan.")
+    return await after_login(update, context)
 
 # ——— Kod qabul qilish ———
 async def code_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    client = sessions.get(user_id)
+    client = sessions.get(update.effective_user.id)
     phone = context.user_data.get('phone')
-
     try:
         await client.sign_in(phone, update.message.text.strip())
     except errors.SessionPasswordNeededError:
@@ -119,14 +106,11 @@ async def code_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Xato: {e}")
         return ConversationHandler.END
-
     return await after_login(update, context)
-
 
 # ——— 2FA parol ———
 async def password_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    client = sessions.get(user_id)
+    client = sessions.get(update.effective_user.id)
     try:
         await client.sign_in(password=update.message.text.strip())
     except Exception as e:
@@ -134,12 +118,10 @@ async def password_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     return await after_login(update, context)
 
-
 # ——— Login tugagach ———
 async def after_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📊 Nechta guruh yaratilsin? (masalan 1-5)")
     return GROUP_RANGE
-
 
 # ——— Guruh yaratish jarayoni ———
 async def background_group_creator(user_id, client, start, end, mode, context):
@@ -165,36 +147,31 @@ async def background_group_creator(user_id, client, start, end, mode, context):
     await client.disconnect()
     sessions.pop(user_id, None)
 
-
 # ——— Guruhlar soni qabul qilish ———
 async def group_range_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         start, end = map(int, update.message.text.strip().split('-'))
-    except:
-        await update.message.reply_text("❌ Noto‘g‘ri format.")
+        if start <= 0 or end < start:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("❌ Noto‘g‘ri format. Masalan: 1-5")
         return GROUP_RANGE
 
     client = sessions.get(update.effective_user.id)
-    mode = context.user_data.get('mode')
-
     await update.message.reply_text("⏳ Guruh yaratish jarayoni boshlandi...")
-    asyncio.create_task(background_group_creator(update.effective_user.id, client, start, end, mode, context))
+    asyncio.create_task(background_group_creator(update.effective_user.id, client, start, end, context.user_data.get('mode'), context))
     return ConversationHandler.END
-
 
 # ——— Bekor qilish ———
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Bekor qilindi.")
-    client = sessions.pop(update.effective_user.id, None)
-    if client:
+    if (client := sessions.pop(update.effective_user.id, None)):
         await client.disconnect()
     return ConversationHandler.END
 
-
 # 🌐 WEB SERVER (Render uchun)
-async def handle(request):
+async def handle(_):
     return web.Response(text="Bot alive!")
-
 
 async def start_webserver():
     app = web.Application()
@@ -205,32 +182,31 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     logger.info(f"🌐 Web-server {port} portda ishga tushdi.")
+    while True:  # Render health check uchun doimiy ishlash
+        await asyncio.sleep(3600)
 
+# 🤖 BOTNI ISHGA TUSHIRISH
+async def run_bot():
+    application = Application.builder().token(bot_token).build()
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            ASK_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_password)],
+            SELECT_MODE: [CallbackQueryHandler(mode_chosen)],
+            PHONE: [MessageHandler(filters.TEXT | filters.CONTACT, phone_received)],
+            CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, code_received)],
+            PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, password_received)],
+            GROUP_RANGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, group_range_received)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    application.add_handler(conv_handler)
+    logger.info("🤖 Bot ishga tushdi.")
+    await application.run_polling()
 
-# ——— Render uchun mos asosiy ishga tushirish ———
+# ASOSIY ISHGA TUSHIRISH
+async def main():
+    await asyncio.gather(start_webserver(), run_bot())
+
 if __name__ == "__main__":
-    async def main():
-        # Web-serverni fon vazifasida ishga tushirish
-        asyncio.create_task(start_webserver())
-
-        # Botni ishga tushirish
-        app = ApplicationBuilder().token(bot_token).build()
-
-        conv_handler = ConversationHandler(
-            entry_points=[CommandHandler("start", start)],
-            states={
-                ASK_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_password)],
-                SELECT_MODE: [CallbackQueryHandler(mode_chosen)],
-                PHONE: [MessageHandler(filters.TEXT | filters.CONTACT, phone_received)],
-                CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, code_received)],
-                PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, password_received)],
-                GROUP_RANGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, group_range_received)],
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],
-        )
-        app.add_handler(conv_handler)
-
-        logger.info("🤖 Bot ishga tushdi.")
-        await app.run_polling()
-
     asyncio.run(main())
