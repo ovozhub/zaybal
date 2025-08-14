@@ -15,7 +15,7 @@ Path("sessions").mkdir(exist_ok=True)
 # ——— TELEGRAM API ma’lumotlari ———
 api_id = 25351311
 api_hash = "7b854af9996797aa9ca67b42f1cd5cbe"
-bot_token = "BOT_TOKEN_HERE"  # xavfsizlik uchun tokenni Render environment variables ga qo‘ying
+bot_token = os.environ.get("7352312639:AAEwQHVq5Uwhmnkc3ITk5vPLhVrRxCOWTcs", "7352312639:AAEwQHVq5Uwhmnkc3ITk5vPLhVrRxCOWTcs")  # tokenni ENV orqali olish
 
 # 🔑 Kirish paroli
 ACCESS_PASSWORD = "dnx"
@@ -182,10 +182,10 @@ async def start_webserver():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     logger.info(f"🌐 Web-server {port} portda ishga tushdi.")
-    while True:  # Render health check uchun doimiy ishlash
+    while True:
         await asyncio.sleep(3600)
 
-# 🤖 BOTNI ISHGA TUSHIRISH
+# 🤖 BOTNI ISHGA TUSHIRISH — yangi event loop ochmasdan
 async def run_bot():
     application = Application.builder().token(bot_token).build()
     conv_handler = ConversationHandler(
@@ -199,14 +199,22 @@ async def run_bot():
             GROUP_RANGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, group_range_received)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=True
     )
     application.add_handler(conv_handler)
     logger.info("🤖 Bot ishga tushdi.")
-    await application.run_polling()
+
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    await asyncio.Event().wait()  # botni ishlashini saqlab turadi
 
 # ASOSIY ISHGA TUSHIRISH
 async def main():
-    await asyncio.gather(start_webserver(), run_bot())
+    await asyncio.gather(
+        start_webserver(),
+        run_bot()
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
